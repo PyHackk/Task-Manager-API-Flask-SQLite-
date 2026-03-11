@@ -91,4 +91,6 @@ function hasSeenDetailedLoading(): boolean {
 }
 
 
+const isHome = window.location.pathname === '/' || window.location.pathname === '/home';
+if (isHome) {
 
