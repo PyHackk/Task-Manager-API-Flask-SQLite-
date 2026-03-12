@@ -1,0 +1,48 @@
+'use client';
+
+import { useSearchParams, useRouter } from 'next/navigation';
+import { AuthProvider } from '@/app/AuthProvider';
+import Header from '@/components/layout/Header';
+import DashboardView from '@/components/ui/DashboardView';
+
+export default function DashboardPage() {
+    return (
+        <AuthProvider>
+            <DashboardContent />
+        </AuthProvider>
+    );
+}
+
+function DashboardContent() {
+    const searchParams = useSearchParams();
+    const router = useRouter();
+    
+    const view = searchParams.get('view');
+    const iid = searchParams.get('iid') || '1';
+    const backTo = searchParams.get('from') || '/';
+    const title = searchParams.get('title') || 'Dashboard View';
+
+    if (!view) {
+        router.push('/');
+        return null;
+    }
+
+    const tableauUrl = `https://tableau.cib.echonet/#/site/CI5/${view}?:iid=${iid}&:embed=y&:toolbar=no`;
+
+    return (
+        <>
+            <Header title={title} />
+            <DashboardView
+                url={tableauUrl}
+                title={title}
+                onBack={() => router.push(backTo)}
+            />
+        </>
+    );
+}
+
+
+
+
+dashboardView: 'views/RegionalMarketers/2_GeneralCCDistribution',
+
