@@ -40,9 +40,3 @@ function DashboardContent() {
         </>
     );
 }
-
-
-
-
-dashboardView: 'views/RegionalMarketers/2_GeneralCCDistribution',
-
