@@ -1,1 +1,60 @@
-l
+function PermissionCard(){
+    const [role, setRole] = useState<string>('Loading...');
+    const [permissions, setPermissions] = useState<Permission[]>([
+        {id: '1', type: 'Access', count: 0},
+        {id: '2', type: 'Entitlement', count: 0},
+        {id: '3', type: 'Pending', count: 0},
+    ]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchSummary = async () => {
+            try {
+                const oidcSub = localStorage.getItem('oidc_sub');
+                if (!oidcSub) {
+                    setRole('Not authenticated');
+                    setLoading(false);
+                    return;
+                }
+
+                const data = await getPermissionSummary(oidcSub);
+                if (data.success) {
+                    setRole(data.role || 'Unknown');
+                    setPermissions([
+                        {id: '1', type: 'Access', count: data.dashboard_count || 0},
+                        {id: '2', type: 'Entitlement', count: 0},
+                        {id: '3', type: 'Pending', count: 0},
+                    ]);
+                } else {
+                    setRole('Unavailable');
+                }
+            } catch (error) {
+                console.error('Error fetching permission summary:', error);
+                setRole('Unavailable');
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchSummary();
+    }, []);
+
+    return(
+        <div className="support-card">
+            <h3 className="support-card-title">Permission Summary</h3>
+            <div className="support-card-content">
+                <p className="support-role-text">Role : <strong>{loading ? 'Loading...' : role}</strong></p>
+                <ul className="support-list">
+                    {permissions.map((perm) => (
+                        <li key={perm.id} className="support-list-item">
+                            <span className="support-item-label">{perm.type}</span>
+                            <span className="support-item-value">
+                                <strong>{perm.count}</strong> {perm.type === 'Access' ? 'Dashboard' : perm.type === 'Entitlement' ? 'Simplified view active' : 'Requests'}
+                            </span>
+                        </li>
+                    ))}
+                </ul>
+            </div>
+            <button className="support-btn support-btn-primary">Report a problem</button>
+        </div>
+    );
+}
