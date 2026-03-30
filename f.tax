@@ -1,0 +1,170 @@
+    @staticmethod
+    def get_user_permission_summary(oidc_sub: str) -> Dict:
+        """Get user permission summary for support page: role, dashboard count, groups."""
+
+        cache_key = f"permission_summary_{oidc_sub}"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
+        # Get user data (reuses existing UserService)
+        user_data = UserService.get_by_oidc_sub(oidc_sub)
+        if not user_data:
+            return {
+                'success': False,
+                'error': 'User not found',
+            }
+
+        system_user = user_data['system_user']
+        site_users = user_data.get('site_users', [])
+
+        if not site_users:
+            return {
+                'success': False,
+                'error': 'No site access',
+            }
+
+        # Get role display_name from site_roles table
+        sites = []
+        all_groups = []
+        with connections[DB].cursor() as cursor:
+            for su in site_users:
+                cursor.execute("""
+                    SELECT sr.display_name, sr.name
+                    FROM site_roles sr
+                    WHERE sr.id = %s
+                """, [su['site_role_id']])
+                role_row = cursor.fetchone()
+                role_display = role_row[0] if role_row else 'Unknown'
+                role_name = role_row[1] if role_row else 'Unknown'
+
+                sites.append({
+                    'site_name': su.get('site_name', ''),
+                    'site_role_id': su['site_role_id'],
+                    'role': role_display,
+                    'role_name': role_name,
+                    'is_admin': su.get('is_admin', False),
+                })
+
+                for g in su.get('groups', []):
+                    if g['name'] not in all_groups:
+                        all_groups.append(g['name'])
+
+        # Get dashboard count (reuses existing get_all_views_flat)
+        flat_result = PermissionService.get_all_views_flat(oidc_sub)
+
+        dashboard_count = 0
+        total_views = 0
+        if flat_result.get('success'):
+            views = flat_result.get('views', [])
+            total_views = len(views)
+            dashboard_count = len([
+                v for v in views if v.get('sheettype') == 'dashboard'
+            ])
+
+        # Primary role from first site (or highest licensing rank)
+        primary_role = sites[0]['role'] if sites else 'No Access'
+
+        response = {
+            'success': True,
+            'user': system_user.get('friendly_name') or system_user.get('email', ''),
+            'role': primary_role,
+            'dashboard_count': dashboard_count,
+            'total_views': total_views,
+            'entitlements': 'Pending',
+            'groups': all_groups,
+            'sites': sites,
+        }
+
+        cache.set(cache_key, response, 3600)
+        return response
+
+
+
+
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class PermissionSummaryView(APIView):
+    """POST /api/permissions/summary/ ==> Get user permission summary for support page"""
+    authentication_classes = []
+    permission_classes = []
+    http_method_name = ['post']
+
+    def post(self, request):
+        oidc_sub = request.data.get('oidc_sub')
+
+        if not oidc_sub:
+            return Response(
+                {'success': False, 'error': 'oidc_sub is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        result = PermissionService.get_user_permission_summary(oidc_sub)
+
+        if not result['success']:
+            return Response(result, status=status.HTTP_404_NOT_FOUND)
+
+        return Response(result)
+
+
+
+
+
+    path('permission-summary/', views.PermissionSummaryView.as_view(), name='permission-summary'),
+
+
+
+export interface PermissionSummaryResponse {
+    success: boolean;
+    error?: string;
+    user?: string;
+    role?: string;
+    dashboard_count?: number;
+    total_views?: number;
+    entitlements?: string;
+    groups?: string[];
+    sites?: { site_name: string; role: string; role_name: string; is_admin: boolean }[];
+}
+
+
+
+
+// ============================================================
+// PERMISSION SUMMARY
+// ============================================================
+export const getPermissionSummary = async (oidcSub: string): Promise<PermissionSummaryResponse> => {
+    try {
+        if (!oidcSub) {
+            console.error('No oidc_sub provided');
+            return {
+                success: false,
+                error: 'User not authenticated - oidc_sub missing',
+            };
+        }
+
+        const csrfToken = getCsrfToken();
+        const response = await fetch(`${API_BASE_URL}/api/tableau/permission-summary/`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
+            },
+            body: JSON.stringify({ oidc_sub: oidcSub }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error: any) {
+        console.error('Error fetching permission summary:', error);
+        return {
+            success: false,
+            error: error.message || 'Failed to fetch permission summary',
+        };
+    }
+};
